@@ -5,13 +5,13 @@
  *      Author: lixu
  */
 
-
 #ifndef SRC_BLOCKINGQUEUE_H_
 #define SRC_BLOCKINGQUEUE_H_
 
 #include <condition_variable>
 #include <mutex>
 #include <queue>
+#include "LocalLock.hpp"
 
 template<typename T>
 class BlockingQueue {
@@ -19,26 +19,26 @@ public:
     BlockingQueue(size_t capacity):
     _queue(),
     _mtx(),
-    _cond(),
+    _empty_cont(),
+    _full_cont(),
     _capacity(capacity){
     }
     void push(const T& t){
-        if(_queue.size() < _capacity){
-            _queue.push(t);
-            _cond.notify_all();
-        }else {
+        while(_queue.size() == _capacity){
             std::unique_lock<std::mutex> lock(_mtx);
-            _cond.wait(lock);
+            _full_cont.wait(lock);
         }
+        _queue.push(t);
+        _empty_cont.notify_one();
     }
     T& pop(){
-        if(_queue.size() == 0){
+        while(_queue.empty()){
             std::unique_lock<std::mutex> lock(_mtx);
-            _cond.wait(lock);
+            _empty_cont.wait(lock);
         }
         T& t = _queue.front();
         _queue.pop();
-        _cond.notify_all();
+        _full_cont.notify_one();
         return t;
     }
     size_t size (){ return _queue.size();}
@@ -46,7 +46,8 @@ public:
 private:
 	std::queue<T> _queue;
 	std::mutex _mtx;
-	std::condition_variable _cond;
+	std::condition_variable _empty_cont;
+    std::condition_variable _full_cont;
 	size_t _capacity;
 };
 
